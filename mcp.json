@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "local-mcp": {
+      "type": "sse",
+      "url": "http://localhost:3333/sse"
+    },
+    "local-mcp-dos": {
+      "type": "sse",
+      "url": "http://localhost:3334/sse"
+    }
+  },
+  "_coord_proxy": {
+    "_note": "Coordination proxy — OpenAI-compatible, NOT an MCP server",
+    "url": "http://127.0.0.1:1233/v1/chat/completions",
+    "status": "http://127.0.0.1:1233/status",
+    "start": "node coord-proxy.js"
+  }
+}

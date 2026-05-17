@@ -1,0 +1,8 @@
+The filename, directory name, or volume label syntax is incorrect.
+Error occurred while processing: ($?).
+A subdirectory or file { already exists.
+Error occurred while processing: {.
+A subdirectory or file Write-Host already exists.
+Error occurred while processing: Write-Host.
+A subdirectory or file } already exists.
+Error occurred while processing: }.

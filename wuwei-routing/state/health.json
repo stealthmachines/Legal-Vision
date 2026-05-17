@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-05-17T21:20:17.409Z",
+  "cycle_id": 1779052817,
+  "local_mcp": {
+    "port": 3333,
+    "status": "HEALTHY",
+    "last_check": "2026-05-17T21:20:17.409Z",
+    "llm_context": 200000
+  },
+  "local_mcp_dos": {
+    "port": 3334,
+    "status": "HEALTHY",
+    "last_check": "2026-05-17T21:20:17.409Z",
+    "llm_context": 199999
+  },
+  "llm": {
+    "port": 1234,
+    "status": "HEALTHY",
+    "last_check": "2026-05-17T21:20:17.409Z"
+  }
+}
