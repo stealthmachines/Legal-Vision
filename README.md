@@ -1,4 +1,6 @@
-# Easy by zCHG.org
+<img width="1454" height="1049" alt="image" src="https://github.com/user-attachments/assets/39fdeb5f-5616-4f6f-b7a8-43917ac15637" />
+
+# Legal Vision by zCHG.org
 
 > **Phi-resonant dual-MCP stack** — two LLM-backed MCP servers, a phi-emergent routing proxy, an ERL v3 hash-chained ledger, and a tri-voice conversation system grounded in the same φ = 1.618… constant as the Analog-Prime conscious platform.
 
