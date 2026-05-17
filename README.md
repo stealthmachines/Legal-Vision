@@ -1,4 +1,5 @@
 <img width="1454" height="1049" alt="image" src="https://github.com/user-attachments/assets/39fdeb5f-5616-4f6f-b7a8-43917ac15637" />
+*Index Source- 11 Am. Jur. 1D
 
 # Legal Vision by zCHG.org
 
