@@ -30,7 +30,7 @@ Claude / Copilot
 coord-proxy :1233 ─────────────────►│ phi-routes between :3333 / :3334 / :1234
 ```
 
-## Single-Slot Mode Status
+# Single-Slot Mode Status
 
 At this time, **single-slot mode supports only Slot 2 on port 3334**.
 
