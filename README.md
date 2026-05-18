@@ -4,7 +4,7 @@
 # Legal Vision by zCHG.org
 
 #### An AI document reader which specializes in reading American Jurisprudence from fine print photographic images. Pairs well with LM Studio.  
-Incidentally, includes a council of up to three native bots.
+Incidentally, includes a "legal council" of up to two local bots + one cloud bot.
 
 > **Phi-resonant dual-MCP stack** — two LLM-backed MCP servers, a phi-emergent routing proxy, an ERL v3 hash-chained ledger, and a tri-voice conversation system grounded in the same φ = 1.618… constant as the Analog-Prime conscious platform.
 
