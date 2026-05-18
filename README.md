@@ -4,7 +4,7 @@
 # Legal Vision by zCHG.org
 
 #### An AI document reader which specializes in reading American Jurisprudence from fine print photographic images. Pairs well with LM Studio.  
-Incidentally, includes a "legal council" of up to two local bots + one cloud bot.
+Includes a "legal council" of up to two local bots + one cloud bot.
 
 ---
 
