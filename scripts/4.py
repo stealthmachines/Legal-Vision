@@ -164,7 +164,7 @@ class LegalBookPreOCR:
         return final
 
     def process_image(self, image_path: str, mode: str = "columns"):
-        print(f"\n🚀 Processing: {Path(image_path).name} | Mode: {mode.upper()}")
+        print(f"\n Processing: {Path(image_path).name} | Mode: {mode.upper()}")
         base_name = Path(image_path).stem
 
         img = self.load_image(image_path)
@@ -209,7 +209,7 @@ class LegalBookPreOCR:
                     final.save(self.output_dir / f"{base_name}_p{p_idx}_col_{i:02d}.png")
                     slice_id += 1
 
-        print(f"✅ Completed processing — {slice_id} slices generated\n")
+        print(f" Completed processing — {slice_id} slices generated\n")
 
 
 if __name__ == "__main__":
@@ -224,4 +224,4 @@ if __name__ == "__main__":
             # processor.process_image(img_path, mode="lines")
             # processor.process_image(img_path, mode="fullpage")
 
-    print("🎉 All images processed successfully!")
+    print(" All images processed successfully!")
