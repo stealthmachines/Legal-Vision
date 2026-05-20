@@ -104,11 +104,11 @@ const LMS_DOWNLOAD = {
 
 // ── Model to download ─────────────────────────────────────────────────────────
 // Hugging Face direct GGUF download. ~4.3 GB at Q2_K_XL.
-const MODEL_URL      = 'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q2_K_XL.gguf?download=true';
-const MODEL_FILENAME = 'Qwen3.5-9B-UD-Q2_K_XL.gguf';
+const MODEL_URL      = 'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q6_K_XL.gguf?download=true';
+const MODEL_FILENAME = 'Qwen3.5-9B-UD-Q6_K_XL.gguf';
 const MODEL_USER_REPO = 'unsloth/Qwen3.5-9B-GGUF'; // used with `lms import --user-repo`
 // The model key lms assigns after import (user/repo/filename without ext → lmstudio key)
-const MODEL_KEY      = 'qwen3.5-9b@q2_k_xl';  // approximate — lms ls will show actual key
+const MODEL_KEY      = 'qwen3.5-9b@q6_k_xl';  // approximate — lms ls will show actual key
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
