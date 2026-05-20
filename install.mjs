@@ -102,13 +102,44 @@ const LMS_DOWNLOAD = {
   linux:  'https://releases.lmstudio.ai/linux/x86_64/latest/LM-Studio.AppImage',
 };
 
-// ── Model to download ─────────────────────────────────────────────────────────
-// Hugging Face direct GGUF download. ~4.3 GB at Q2_K_XL.
-const MODEL_URL      = 'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q6_K_XL.gguf?download=true';
-const MODEL_FILENAME = 'Qwen3.5-9B-UD-Q6_K_XL.gguf';
-const MODEL_USER_REPO = 'unsloth/Qwen3.5-9B-GGUF'; // used with `lms import --user-repo`
-// The model key lms assigns after import (user/repo/filename without ext → lmstudio key)
-const MODEL_KEY      = 'qwen3.5-9b@q6_k_xl';  // approximate — lms ls will show actual key
+// ── Model to download (defaults, can be overridden by user prompt) ─────────────
+let MODEL_URL      = 'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q6_K_XL.gguf?download=true';
+let MODEL_FILENAME = 'Qwen3.5-9B-UD-Q6_K_XL.gguf';
+let MODEL_USER_REPO = 'unsloth/Qwen3.5-9B-GGUF'; // used with `lms import --user-repo`
+let MODEL_KEY      = 'qwen3.5-9b@q6_k_xl';  // approximate — lms ls will show actual key
+// ── User prompt for model selection ────────────────────────────────────────────
+import readline from 'readline';
+
+async function promptUser(question, defaultValue) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`${question} ${defaultValue ? `[${defaultValue}] ` : ''}`, (answer) => {
+      rl.close();
+      resolve(answer.trim() || defaultValue);
+    });
+  });
+}
+
+async function userModelPrompt() {
+  if (process.env.CI || argv.includes('--skip-model') || argv.includes('--status')) return;
+  head('── Model selection ──────────────────────────────────────');
+  let skip = (await promptUser('Skip model download/import? (y/N)', 'N')).toLowerCase();
+  if (skip === 'y' || skip === 'yes') {
+    argv.push('--skip-model');
+    info('Model download/import will be skipped.');
+    return;
+  }
+  let url = await promptUser('Model URL to download', MODEL_URL);
+  let filename = await promptUser('Model filename (save as)', MODEL_FILENAME);
+  let userRepo = await promptUser('Model user/repo for import', MODEL_USER_REPO);
+  let key = await promptUser('Model key for loading (optional)', MODEL_KEY);
+  MODEL_URL = url;
+  MODEL_FILENAME = filename;
+  MODEL_USER_REPO = userRepo;
+  if (key) MODEL_KEY = key;
+}
+
+await userModelPrompt();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
