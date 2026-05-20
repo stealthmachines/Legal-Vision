@@ -1,0 +1,72 @@
+{
+  "identifier": "@local:inference1",
+  "name": "inference1",
+  "changed": false,
+  "operation": {
+    "fields": [
+      {
+        "key": "llm.prediction.temperature",
+        "value": 1
+      },
+      {
+        "key": "llm.prediction.llama.cpuThreads",
+        "value": 3
+      },
+      {
+        "key": "llm.prediction.topKSampling",
+        "value": 20
+      },
+      {
+        "key": "llm.prediction.topPSampling",
+        "value": 0.95
+      },
+      {
+        "key": "llm.prediction.repeatPenalty",
+        "value": {
+          "checked": true,
+          "value": 1
+        }
+      },
+      {
+        "key": "llm.prediction.llama.presencePenalty",
+        "value": {
+          "checked": true,
+          "value": 0
+        }
+      },
+      {
+        "key": "llm.prediction.minPSampling",
+        "value": {
+          "checked": true,
+          "value": 0
+        }
+      }
+    ]
+  },
+  "load": {
+    "fields": [
+      {
+        "key": "llm.load.contextLength",
+        "value": 200000
+      },
+      {
+        "key": "llm.load.llama.acceleration.offloadRatio",
+        "value": 999
+      },
+      {
+        "key": "llm.load.llama.kCacheQuantizationType",
+        "value": {
+          "checked": true,
+          "value": "q4_0"
+        }
+      },
+      {
+        "key": "llm.load.llama.vCacheQuantizationType",
+        "value": {
+          "checked": true,
+          "value": "q4_0"
+        }
+      }
+    ]
+  }
+}

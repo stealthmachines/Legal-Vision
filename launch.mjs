@@ -23,7 +23,7 @@
  */
 
 import { spawn, execSync, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, readdirSync, statSync } from 'fs';
 import { createServer }   from 'net';
 import { createInterface } from 'readline';
 import { fileURLToPath }  from 'url';
@@ -269,41 +269,56 @@ function lmsLoadModelBg(key) {
  * with underscores converted to hyphens and a quantisation @-suffix, but for
  * files imported via --user-repo local/imported it often falls back to the
  * generic alias "imported". We therefore:
- *   1. Check lms ls for any key that shares meaningful tokens with the filename
- *   2. Fall back to constructing the key from the repo + stem ourselves
+ *   1. Check lms ls for any key that shares meaningful tokens with the filename,
+ *      weighting model-family tokens (e.g. "35b", "a3b") 3× over quant tokens
+ *      (e.g. "q2", "xl") to avoid false matches on shared quantization suffixes.
+ *   2. Fall back to constructing the key from the stem ourselves.
  */
+// Generic quantization tokens that appear across many model names — low disambiguation value.
+const QUANT_TOKENS = new Set([
+  'q2','q3','q4','q5','q6','q8','f16','f32','bf16',
+  'xl','xs','km','ks','kl','kxl','ud','imat',
+]);
+
 function findKeyAfterImport(ggufBasename) {
   const r = lmsRun('ls');
 
-  // Stem: "Qwen3.5-9B-UD-Q3_K_XL" → tokens ["qwen3", "5", "9b", "ud", "q3", "k", "xl"]
-  const stem       = ggufBasename.replace(/\.gguf$/i, '');
-  const stemLower  = stem.toLowerCase();
-  // Significant tokens: length ≥ 2, not pure numbers, not single chars
-  const tokens     = stemLower.split(/[-_.]/).filter(t => t.length >= 2 && !/^\d+$/.test(t));
+  const stem         = ggufBasename.replace(/\.gguf$/i, '');
+  const stemLower    = stem.toLowerCase();
+  const allTokens    = stemLower.split(/[-_.]/).filter(t => t.length >= 2 && !/^\d+$/.test(t));
+  // Family tokens identify the model/variant; quant tokens are shared across many models.
+  const familyTokens = allTokens.filter(t => !QUANT_TOKENS.has(t));
+  const quantTokens  = allTokens.filter(t =>  QUANT_TOKENS.has(t));
 
   if (r.ok && r.out) {
     const lines = r.out.split('\n').map(l => l.trim()).filter(Boolean);
-    let bestKey  = null;
-    let bestHits = 0;
+    let bestKey   = null;
+    let bestScore = 0;
 
     for (const line of lines) {
-      // Skip header / info lines
       if (/^(you |llm |embed |name |─|no model)/i.test(line)) continue;
-      const key = line.split(/\s+/)[0];
-      if (!key || key.length < 3 || key === 'imported') continue; // skip the generic alias
+      const key = line.trim().split(/\s+/)[0];
+      if (!key || key.length < 3 || key === 'imported') continue;
 
       const keyLower = key.toLowerCase().replace(/@/g, '-').replace(/_/g, '-');
-      const hits     = tokens.filter(t => keyLower.includes(t)).length;
-      if (hits > bestHits) { bestHits = hits; bestKey = key; }
+
+      // Family tokens worth 3 pts; quant tokens worth 1 pt.
+      // Must match at least one family token to be a valid candidate.
+      const familyHits = familyTokens.filter(t => keyLower.includes(t)).length;
+      const quantHits  = quantTokens.filter(t => keyLower.includes(t)).length;
+      const score      = familyHits * 3 + quantHits;
+
+      if (familyHits > 0 && score > bestScore) {
+        bestScore = score;
+        bestKey   = key;
+      }
     }
 
-    // Require at least 2 token matches (e.g. "q3" + "xl" or "9b" + "q3")
-    if (bestKey && bestHits >= 2) return bestKey;
+    if (bestKey && bestScore >= 3) return bestKey;
   }
 
-  // Fallback: construct key as LM Studio would — stem lowercased, hyphens, no .gguf
-  // For local/imported imports LM Studio often uses just the stem as the identifier.
-  return stem.toLowerCase().replace(/_/g, '-');
+  // Fallback: derive key from stem (LM Studio lowercases and hyphenates)
+  return stemLower.replace(/_/g, '-');
 }
 
 /**
@@ -322,9 +337,9 @@ async function lmsLoadModelSync(key, slot) {
     console.log(`${c.green}[LM Studio]${c.reset} ${identifier} is already loaded — skipping.`);
     return true;
   }
-  const args = ['load', key, '-y', '--identifier', identifier];
+  const args = ['load', key, '-y', '--gpu', 'max', '-c', '200000', '--identifier', identifier];
   return new Promise(resolve => {
-    console.log(`${c.cyan}[LM Studio]${c.reset} Loading ${c.bold}${key}${c.reset} as ${c.bold}${identifier}${c.reset} — this may take 30–90 s...`);
+    console.log(`${c.cyan}[LM Studio]${c.reset} Loading ${c.bold}${key}${c.reset} as ${c.bold}${identifier}${c.reset} (ctx=200k, gpu=max) — this may take 30–90 s...`);
     let stderrBuf = '';
     const child = spawn(LMS_BIN, args, { stdio: ['ignore', 'inherit', 'pipe'] });
     child.stderr.on('data', d => { stderrBuf += d.toString(); });
@@ -350,20 +365,37 @@ async function lmsImportGguf(ggufPath) {
       stdio: ['inherit', 'inherit', 'pipe'],
     });
     child.stderr.on('data', d => { const t = d.toString(); stderrBuf += t; process.stderr.write(t); });
-    child.on('close', code => {
+    child.on('close', async code => {
       const alreadyExists = stderrBuf.includes('already exists') || stderrBuf.includes('already imported');
       const succeeded     = code === 0 || alreadyExists;
-      // Always wait and resolve key — model is on disk either way
-      setTimeout(() => {
-        const realKey = findKeyAfterImport(basename);
-        if (realKey) {
-          console.log(`${c.cyan}[LM Studio]${c.reset} Model key resolved: ${c.bold}${realKey}${c.reset}`);
-        } else {
-          console.log(`${c.yellow}[LM Studio]${c.reset} Could not resolve key automatically.`);
-          console.log(`             Run ${c.cyan}lms ls${c.reset} to find it, then use ${c.cyan}--load-model <key>${c.reset}`);
-        }
-        resolve({ ok: succeeded, key: realKey });
-      }, 1500);
+
+      // Give LM Studio time to register the import before querying lms ls.
+      // Retry up to 3 times with 2 s gaps if the key isn't found immediately.
+      let realKey = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await new Promise(r => setTimeout(r, 2000));
+        realKey = findKeyAfterImport(basename);
+        if (realKey) break;
+        console.log(`${c.gray}[LM Studio]${c.reset} Key not found yet — retrying (${attempt}/3)...`);
+      }
+
+      if (realKey) {
+        console.log(`${c.cyan}[LM Studio]${c.reset} Model key resolved: ${c.bold}${realKey}${c.reset}`);
+      } else {
+        console.log(`${c.yellow}[LM Studio]${c.reset} Could not resolve key automatically.`);
+        console.log(`             Run ${c.cyan}lms ls${c.reset} to find it, then use ${c.cyan}--load-model <key>${c.reset}`);
+        // Print lms ls raw output to help the user identify the key manually
+        const raw = lmsRun('ls');
+        if (raw.out) console.log(`\n${c.dim}lms ls output:\n${raw.out}${c.reset}\n`);
+      }
+
+      // Write per-model config so KV-cache quant is applied on next load
+      if (succeeded) {
+        const destGguf = path.join(getLmsDownloadsFolder(), 'local', 'imported', basename);
+        if (existsSync(destGguf)) writeModelLoadConfig(destGguf);
+      }
+
+      resolve({ ok: succeeded, key: realKey });
     });
   });
 }
@@ -591,6 +623,128 @@ async function runModelPicker() {
   return { action: 'load-id', modelId: answer };
 }
 
+// ── Preset sync — copy preset file + write per-model load configs ────────────
+
+// The inference (operation) fields mirrored from inference1.preset.json.
+// Writing these directly into each per-model config causes LM Studio to
+// recognise inference1 as the selected preset for that model.
+const MODEL_OPERATION_FIELDS = [
+  { key: 'llm.prediction.temperature',            value: 1 },
+  { key: 'llm.prediction.llama.cpuThreads',        value: 3 },
+  { key: 'llm.prediction.topKSampling',            value: 20 },
+  { key: 'llm.prediction.topPSampling',            value: 0.95 },
+  { key: 'llm.prediction.repeatPenalty',           value: { checked: true, value: 1 } },
+  { key: 'llm.prediction.llama.presencePenalty',   value: { checked: true, value: 0 } },
+  { key: 'llm.prediction.minPSampling',            value: { checked: true, value: 0 } },
+];
+
+// The load fields we want applied to every model.
+const MODEL_LOAD_FIELDS = [
+  { key: 'llm.load.contextLength',                     value: 200000 },
+  { key: 'llm.load.llama.acceleration.offloadRatio',   value: 999    }, // clamped to hw max by LM Studio
+  { key: 'llm.load.llama.kCacheQuantizationType',      value: { checked: true, value: 'q4_0' } },
+  { key: 'llm.load.llama.vCacheQuantizationType',      value: { checked: true, value: 'q4_0' } },
+];
+
+/** Read the LM Studio downloads folder from settings.json (falls back to ~/.lmstudio/models). */
+function getLmsDownloadsFolder() {
+  try {
+    const s = JSON.parse(readFileSync(path.join(HOME, '.lmstudio', 'settings.json'), 'utf8'));
+    if (s.downloadsFolder) return s.downloadsFolder;
+  } catch {}
+  return path.join(HOME, '.lmstudio', 'models');
+}
+
+/**
+ * Write (or update) the per-model load config for a given .gguf absolute path.
+ * Preserves any existing prediction (operation) fields.
+ * Returns true if the file was written.
+ */
+function writeModelLoadConfig(ggufAbsPath) {
+  const dlBase     = getLmsDownloadsFolder();
+  const configBase = path.join(HOME, '.lmstudio', '.internal', 'user-concrete-model-default-config');
+  const rel        = path.relative(dlBase, ggufAbsPath);
+  if (rel.startsWith('..')) return false; // not under downloads folder
+
+  const configPath = path.join(configBase, rel + '.json');
+  let existing = null;
+  if (existsSync(configPath)) {
+    try { existing = JSON.parse(readFileSync(configPath, 'utf8')); } catch {}
+  }
+
+  const config = {
+    preset:    '@local:inference1',
+    operation: { fields: MODEL_OPERATION_FIELDS },
+    load:      { fields: MODEL_LOAD_FIELDS },
+  };
+
+  // Skip write if already identical
+  const alreadyOk =
+    existing &&
+    JSON.stringify(existing.load?.fields)      === JSON.stringify(MODEL_LOAD_FIELDS) &&
+    JSON.stringify(existing.operation?.fields) === JSON.stringify(MODEL_OPERATION_FIELDS);
+  if (alreadyOk) return false;
+
+  mkdirSync(path.dirname(configPath), { recursive: true });
+  writeFileSync(configPath, newText, 'utf8');
+  return true;
+}
+
+/**
+ * Walk the downloads folder and write load configs for every .gguf found.
+ * Skips files whose config is already up to date.
+ */
+function applyLoadConfigToAllModels() {
+  const dlBase = getLmsDownloadsFolder();
+  if (!existsSync(dlBase)) return;
+  const ggufs = scanGgufFiles(dlBase, 5);
+  let updated = 0;
+  for (const m of ggufs) { if (writeModelLoadConfig(m.fullPath)) updated++; }
+  if (updated > 0)
+    console.log(`${c.green}[preset]${c.reset} Load config written for ${updated} model(s) (ctx=200k, gpu=max, kv=Q4_0).`);
+  else
+    console.log(`${c.green}[preset]${c.reset} All model load configs already up to date.`);
+}
+
+function ensurePreset() {
+  const src  = path.join(__dirname, 'inference1.preset.json');
+  const dest = path.join(HOME, '.lmstudio', 'config-presets', 'inference1.preset.json');
+  let presetWritten = false;
+
+  if (!existsSync(src)) {
+    console.log(`${c.yellow}[preset]${c.reset} inference1.preset.json not found in project — skipping.`);
+  } else {
+    const srcText  = readFileSync(src, 'utf8');
+    const destText = existsSync(dest) ? readFileSync(dest, 'utf8') : null;
+    if (srcText !== destText) {
+      try {
+        mkdirSync(path.dirname(dest), { recursive: true });
+        copyFileSync(src, dest);
+        presetWritten = true;
+        console.log(`${c.green}[preset]${c.reset} inference1.preset.json installed → ${dest}`);
+      } catch (e) {
+        console.log(`${c.yellow}[preset]${c.reset} Could not copy preset: ${e.message}`);
+      }
+    } else {
+      console.log(`${c.green}[preset]${c.reset} inference1.preset.json already up to date.`);
+    }
+  }
+
+  // If the preset was freshly written while LM Studio is already running, stop
+  // the server so ensureLmsServer() restarts it — otherwise LM Studio won't
+  // pick up the new preset file until a manual restart.
+  if (presetWritten && existsSync(LMS_BIN)) {
+    const st = lmsRun('server', 'status');
+    if (st.out.toLowerCase().includes('running')) {
+      console.log(`${c.yellow}[preset]${c.reset} Restarting LM Studio to load new preset...`);
+      spawnSync(LMS_BIN, ['server', 'stop'], { stdio: 'ignore', timeout: 10000 });
+    }
+  }
+
+  // Write per-model configs so every model loads with the desired settings
+  applyLoadConfigToAllModels();
+}
+
 // ── Dependency check + npm install ───────────────────────────────────────────
 function ensureDeps() {
   try { execSync('npm --version', { stdio: 'ignore' }); }
@@ -714,6 +868,7 @@ if (LOAD_MODEL) {
 }
 
 ensureDeps();
+ensurePreset();
 
 console.log(`\n${c.bold}${c.cyan}Easy by zCHG.org${c.reset}`);
 console.log(`${c.gray}Node ${process.version}  ·  ${process.platform}/${process.arch}  ·  ${new Date().toISOString()}${c.reset}`);
