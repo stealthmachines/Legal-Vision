@@ -1,40 +1,41 @@
 #Requires -Version 5
 <#
 .SYNOPSIS
-    Easy by zCHG.org — Windows zero-dependency bootstrap
+    Easy by zCHG.org - Windows zero-dependency bootstrap
     Called by INSTALL.bat. Do not run directly.
 
     What this does:
       1. Installs Node.js LTS if not present (tries winget, then direct MSI download)
-      2. Hands off to install.mjs which does everything else:
-         LM Studio install → model download → server start → MCP stack launch
+      2. Hands off to install.mjs which does everything else.
 #>
 
 $ErrorActionPreference = 'Stop'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ── Pretty output ─────────────────────────────────────────────────────────────
-function ok($m)   { Write-Host "  [OK] $m" -ForegroundColor Green  }
-function inf($m)  { Write-Host "  --> $m" -ForegroundColor Cyan   }
-function wrn($m)  { Write-Host "  [!] $m" -ForegroundColor Yellow }
-function err($m)  { Write-Host "  [X] $m" -ForegroundColor Red    }
-function hdr($m)  { Write-Host "`n$m" -ForegroundColor White      }
+function ok($m)  { Write-Host "  [OK] $m" -ForegroundColor Green }
+function inf($m) { Write-Host "  --> $m" -ForegroundColor Cyan }
+function wrn($m) { Write-Host "  [!] $m" -ForegroundColor Yellow }
+function err($m) { Write-Host "  [X] $m" -ForegroundColor Red }
+function hdr($m) { Write-Host "`n$m" -ForegroundColor White }
 
 Write-Host ""
 Write-Host " ======================================================" -ForegroundColor Cyan
-Write-Host "   Easy by zCHG.org  |  One-Click Installer"            -ForegroundColor Cyan
-Write-Host "   (Windows Zero-Dependency Bootstrap)"                  -ForegroundColor DarkCyan
+Write-Host "   Easy by zCHG.org  |  One-Click Installer" -ForegroundColor Cyan
+Write-Host "   (Windows Zero-Dependency Bootstrap)" -ForegroundColor DarkCyan
 Write-Host " ======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Step 1: Node.js ──────────────────────────────────────────────────────────
 hdr "Step 1/2 -- Node.js"
 
 function Test-NodeOk {
     try {
         $v = & node --version 2>$null
-        if ($v -match '^v(\d+)') { return [int]$Matches[1] -ge 18 }
-    } catch {}
+        if ($v -match '^v(\d+)') {
+            return ([int]$Matches[1] -ge 18)
+        }
+    } catch {
+        return $false
+    }
     return $false
 }
 
@@ -43,56 +44,47 @@ if (Test-NodeOk) {
 } else {
     $installed = $false
 
-    # ── Try winget (Windows 10 1809+ / Windows 11) ──────────────────────────
     if (-not $installed) {
         try {
             $null = Get-Command winget -ErrorAction Stop
             inf "Installing Node.js LTS via winget ..."
-            $wingetArgs = @(
-                'install', 'OpenJS.NodeJS.LTS',
-                '--silent',
-                '--accept-package-agreements',
-                '--accept-source-agreements',
-                '--force'
-            )
-            winget @wingetArgs
+            & winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements --force
             if ($LASTEXITCODE -eq 0) {
                 ok "Node.js installed via winget"
                 $installed = $true
             } else {
-                wrn "winget returned $LASTEXITCODE — will try direct download"
+                wrn "winget returned $LASTEXITCODE - will try direct download"
             }
         } catch {
-            wrn "winget not available — will try direct download"
+            wrn "winget not available - will try direct download"
         }
     }
 
-    # ── Try direct MSI download from nodejs.org ──────────────────────────────
     if (-not $installed) {
         inf "Fetching Node.js LTS version info from nodejs.org ..."
         try {
-            $index = Invoke-RestMethod "https://nodejs.org/dist/index.json" `
-                         -TimeoutSec 30 `
-                         -UseBasicParsing
-            $lts  = $index | Where-Object { $_.lts -and $_.lts -ne $false } |
-                    Select-Object -First 1
-            $ver  = $lts.version   # e.g. "v22.14.0"
-            $msi  = "node-$ver-x64.msi"
-            $url  = "https://nodejs.org/dist/$ver/$msi"
-            $tmp  = Join-Path $env:TEMP $msi
+            $index = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -TimeoutSec 30
+            $lts = $index | Where-Object { $_.lts -and $_.lts -ne $false } | Select-Object -First 1
+            if (-not $lts) {
+                throw "Could not determine latest LTS version from nodejs.org."
+            }
+
+            $ver = $lts.version
+            $msi = "node-$ver-x64.msi"
+            $url = "https://nodejs.org/dist/$ver/$msi"
+            $tmp = Join-Path $env:TEMP $msi
 
             if (Test-Path $tmp) {
                 inf "Found cached installer at $tmp"
             } else {
                 inf "Downloading Node.js $ver (~30 MB) ..."
-                $wc = New-Object System.Net.WebClient
-                $wc.DownloadFile($url, $tmp)
+                Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
                 ok "Downloaded $tmp"
             }
 
             inf "Installing Node.js $ver silently (this takes ~30 s) ..."
             $msiArgs = "/i `"$tmp`" /quiet /norestart ADDLOCAL=ALL"
-            $proc = Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -PassThru -NoNewWindow
+            $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru -NoNewWindow
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                 ok "Node.js $ver installed"
                 $installed = $true
@@ -100,7 +92,7 @@ if (Test-NodeOk) {
                 err "msiexec exited with code $($proc.ExitCode)"
             }
         } catch {
-            err "Download/install failed: $_"
+            err "Download/install failed: $($_.Exception.Message)"
         }
     }
 
@@ -113,18 +105,16 @@ if (Test-NodeOk) {
         exit 1
     }
 
-    # ── Refresh PATH so node.exe is visible in this session ──────────────────
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath    = [Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path    = "$machinePath;$userPath"
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = "$machinePath;$userPath"
 
-    # Belt-and-suspenders: also add the standard install dir explicitly
     foreach ($candidate in @(
-        "C:\Program Files\nodejs",
+        'C:\Program Files\nodejs',
         "$env:APPDATA\Local\Programs\nodejs",
         "$env:ProgramFiles\nodejs"
     )) {
-        if (Test-Path "$candidate\node.exe") {
+        if (Test-Path (Join-Path $candidate 'node.exe')) {
             $env:Path = "$candidate;$env:Path"
             break
         }
@@ -132,16 +122,16 @@ if (Test-NodeOk) {
 
     if (-not (Test-NodeOk)) {
         err "Node.js was installed but is still not on PATH."
-        err "Please CLOSE this window, open a new terminal, and run:"
+        err "Please close this window, open a new terminal, and run:"
         err "   node install.mjs"
         Write-Host ""
         Read-Host "Press Enter to exit"
         exit 1
     }
+
     ok "Node.js $(node --version) is ready"
 }
 
-# ── Step 2: Hand off to install.mjs ─────────────────────────────────────────
 hdr "Step 2/2 -- MCP Stack (install.mjs)"
 inf "Handing off to install.mjs ..."
 Write-Host ""
